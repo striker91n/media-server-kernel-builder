@@ -56,6 +56,11 @@ jobs:
           cp "$GITHUB_WORKSPACE/config/config-7.0.0-42-generic" .config
           scripts/config --set-str CONFIG_LOCALVERSION "$LOCALVERSION"
           scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          # Ubuntu's config references a distro-only certificate file that is not
+          # shipped with upstream kernel.org tarballs. Disable that reference so
+          # the generic upstream build can generate its own package.
+          scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ""
+          scripts/config --set-str CONFIG_SYSTEM_REVOCATION_KEYS ""
           make olddefconfig
           make -s kernelrelease
           cp .config "$GITHUB_WORKSPACE/final-config"
