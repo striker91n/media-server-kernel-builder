@@ -1,0 +1,83 @@
+name: Build Linux kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_tag:
+        description: 'Upstream kernel tag (for example 7.3)'
+        required: true
+        default: '7.3'
+        type: string
+      localversion:
+        description: 'Kernel local version suffix'
+        required: true
+        default: '-media-server73'
+        type: string
+  push:
+    paths:
+      - '.github/workflows/build-kernel.yml'
+      - 'config/**'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+env:
+  KERNEL_TAG: ${{ inputs.kernel_tag || '7.3' }}
+  LOCALVERSION: ${{ inputs.localversion || '-media-server73' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out builder
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential cpio flex fakeroot \
+            libelf-dev libncurses-dev libssl-dev libdw-dev dwarves \
+            rsync wget xz-utils kmod
+
+      - name: Download upstream kernel
+        run: |
+          set -euxo pipefail
+          wget -q --show-progress "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${KERNEL_TAG}.tar.xz"
+          wget -q "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${KERNEL_TAG}.tar.sign" || true
+          tar -xf "linux-${KERNEL_TAG}.tar.xz"
+
+      - name: Configure kernel for Media Server
+        working-directory: linux-${{ env.KERNEL_TAG }}
+        run: |
+          set -euxo pipefail
+          cp "$GITHUB_WORKSPACE/config/config-7.0.0-42-generic" .config
+          scripts/config --set-str CONFIG_LOCALVERSION "$LOCALVERSION"
+          scripts/config --disable CONFIG_LOCALVERSION_AUTO
+          make olddefconfig
+          make -s kernelrelease
+          cp .config "$GITHUB_WORKSPACE/final-config"
+
+      - name: Build Debian packages
+        working-directory: linux-${{ env.KERNEL_TAG }}
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" bindeb-pkg KDEB_PKGVERSION="${KERNEL_TAG}-1" KBUILD_BUILD_USER=github KBUILD_BUILD_HOST=github-actions
+
+      - name: Collect packages and checksums
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+          find .. -maxdepth 1 -type f -name '*.deb' -exec cp {} artifacts/ \;
+          cp final-config artifacts/config-${KERNEL_TAG}-${LOCALVERSION}
+          sha256sum artifacts/* > artifacts/SHA256SUMS
+          ls -lh artifacts
+
+      - name: Upload kernel packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-server-linux-${{ env.KERNEL_TAG }}${{ env.LOCALVERSION }}
+          path: artifacts/
+          retention-days: 30

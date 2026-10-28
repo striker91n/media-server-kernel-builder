@@ -1,0 +1,5 @@
+linux-*/
+*.tar.xz
+*.tar.sign
+artifacts/
+final-config
