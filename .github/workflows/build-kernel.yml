@@ -29,7 +29,10 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    # A full distro-style x86_64 kernel with the server's broad hardware config
+    # can exceed the default hosted-runner window. Keep the job within GitHub's
+    # six-hour maximum while allowing package generation to finish.
+    timeout-minutes: 360
     steps:
       - name: Check out builder
         uses: actions/checkout@v4
